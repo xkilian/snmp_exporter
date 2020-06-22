@@ -214,6 +214,28 @@ func searchNodeTree(oid string, node *Node) *Node {
 	return node
 }
 
+// Search in metric filters if oid is allowed in the list
+func isOidBlockedMetric(oid string, filters []config.MetricStaticFilter) bool {
+	for _, filter := range filters{
+		// the oid is not related to the filter.Oid children
+		if oid == filter.Oid || !strings.HasPrefix(oid, filter.Oid){
+			continue
+		}
+
+		// We loop through all children and only allow the one in filter.Metrics
+		for _, metric := range filter.Metrics{
+			if oid == fmt.Sprintf("%s.%s", filter.Oid, metric){
+				return false
+			}
+		}
+
+		// Oid not found, so it's a blocked metric
+		return true
+
+	}
+	return false
+}
+
 type oidMetricType uint8
 
 const (
@@ -318,6 +340,9 @@ func generateConfigModule(cfg *ModuleConfig, node *Node, nameToNode map[string]*
 	// Find all the usable metrics.
 	for _, metricNode := range metrics {
 		walkNode(metricNode, func(n *Node) {
+			if isOidBlockedMetric(n.Oid, cfg.Filters.Static.Metric){
+				return
+			}
 			t, ok := metricType(n.Type)
 			if !ok {
 				return // Unsupported type.
@@ -376,6 +401,19 @@ func generateConfigModule(cfg *ModuleConfig, node *Node, nameToNode map[string]*
 		})
 	}
 
+	// Build an map of all oid targeted by a filter to access it easily later
+	filterMap := map[string][]string{}
+
+	for _, filter := range cfg.Filters.Static.Instance{
+		for _, oid := range filter.Targets {
+			n, ok := nameToNode[oid]
+			if ok {
+				oid = n.Oid
+			}
+			filterMap[oid] = filter.Instances
+		}
+	}
+
 	// Apply lookups.
 	for _, metric := range out.Metrics {
 		toDelete := []string{}
@@ -414,6 +452,14 @@ func generateConfigModule(cfg *ModuleConfig, node *Node, nameToNode map[string]*
 					}
 				} else {
 					needToWalk[indexNode.Oid] = struct{}{}
+				}
+				// we apply the same filter to metric.Oid if the lookup oid is filtered
+				instances, found := filterMap[indexNode.Oid]
+				if found {
+					delete(needToWalk, metric.Oid)
+					for _, instance := range instances {
+						needToWalk[metric.Oid+"."+instance+"."] = struct{}{}
+					}
 				}
 				if lookup.DropSourceIndexes {
 					// Avoid leaving the old labelname around.
@@ -467,6 +513,19 @@ func generateConfigModule(cfg *ModuleConfig, node *Node, nameToNode map[string]*
 			}
 		}
 	}
+
+	// Apply filters
+	for _, filter := range cfg.Filters.Static.Instance {
+		// Delete the oid targeted by the filter, as we won't walk the whole table
+		for _, oid := range filter.Targets {
+			delete(needToWalk, oid)
+			for _, instance := range filter.Instances {
+				needToWalk[oid+"."+instance+"."] = struct{}{}
+			}
+		}
+	}
+
+	out.Filters = cfg.Filters.Dynamic
 
 	oids := []string{}
 	for k := range needToWalk {
