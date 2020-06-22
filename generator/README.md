@@ -99,19 +99,19 @@ modules:
         drop_source_indexes: false  # If true, delete source index labels for this lookup.
                                     # This avoids label clutter when the new index is unique.
 
-     overrides: # Allows for per-module overrides of bits of MIBs
-       metricName:
-         ignore: true # Drops the metric from the output.
-         regex_extracts:
-           Temp: # A new metric will be created appending this to the metricName to become metricNameTemp.
-             - regex: '(.*)' # Regex to extract a value from the returned SNMP walks's value.
-               value: '$1' # The result will be parsed as a float64, defaults to $1.
-           Status:
-             - regex: '.*Example'
-               value: '1' # The first entry whose regex matches and whose value parses wins.
-             - regex: '.*'
-               value: '0'
-         type: DisplayString # Override the metric type, possible types are:
+    overrides: # Allows for per-module overrides of bits of MIBs
+      metricName:
+        ignore: true # Drops the metric from the output.
+        regex_extracts:
+          Temp: # A new metric will be created appending this to the metricName to become metricNameTemp.
+            - regex: '(.*)' # Regex to extract a value from the returned SNMP walks's value.
+              value: '$1' # The result will be parsed as a float64, defaults to $1.
+          Status:
+            - regex: '.*Example'
+              value: '1' # The first entry whose regex matches and whose value parses wins.
+            - regex: '.*'
+              value: '0'
+        type: DisplayString # Override the metric type, possible types are:
                              #   gauge:   An integer with type gauge.
                              #   counter: An integer with type counter.
                              #   OctetString: A bit string, rendered as 0xff34.
@@ -128,6 +128,28 @@ modules:
                              #   EnumAsInfo: An enum for which a single timeseries is created. Good for constant values.
                              #   EnumAsStateSet: An enum with a time series per state. Good for variable low-cardinality enums.
                              #   Bits: An RFC 2578 BITS construct, which produces a StateSet with a time series per bit.
+
+    filters: # Define filters no reduce the scope of walked oid / metric gathered
+      static: # static filters are handled in the generator
+        instance: # instance filter let specify specific instance to get for the list of target specified
+                  # If one of the target is in a lookup, the filter will apply to oiding depending on it
+          - targets:
+            - bsnDot11EssSsid
+            instances: ["2","3","4"]  # List of instance to get
+
+        metric: # metric filter let specify specific oid in the subtree to get metric on
+                # it will not limit the number of request made to the hardware (as the exporter will Walk over the parent oid)
+                # The metrics specified in the list will be written in the snmp.yml. (Other will be discarded) 
+          - oid: 1.3.6.1.2.1.2.2.1
+            metrics : ["3", "5", "7", "14"]
+
+      dynamic: # dynamic filters are handed by the exporter. The generator simply copy them
+               # (Not implemented yet) the exporter will do a snmp get of the oid and will restrict snmp get made on the targets
+               # if the value returned is in the values list
+        - oid: 1.3.6.1.2.1.2.2.1.7
+          targets:
+            - "1.3.6.1.2.1.2.2.1.4"
+          values: ["1", "2"]
 ```
 
 ### EnumAsInfo and EnumAsStateSet
