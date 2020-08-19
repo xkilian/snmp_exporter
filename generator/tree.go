@@ -517,6 +517,10 @@ func generateConfigModule(cfg *ModuleConfig, node *Node, nameToNode map[string]*
 	for _, filter := range cfg.Filters.Static.Instance {
 		// Delete the oid targeted by the filter, as we won't walk the whole table
 		for _, oid := range filter.Targets {
+			n, ok := nameToNode[oid]
+			if ok {
+				oid = n.Oid
+			}
 			delete(needToWalk, oid)
 			for _, instance := range filter.Instances {
 				needToWalk[oid+"."+instance+"."] = struct{}{}
