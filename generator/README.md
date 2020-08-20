@@ -18,6 +18,12 @@ cd ${GOPATH-$HOME/go}/src/github.com/prometheus/snmp_exporter/generator
 go build
 make mibs
 ```
+## Preparation
+
+It is recommended to have a directory per device family which contains the mibs dir for the device family, 
+a logical link to the generator executable and the generator.yml configuration file. This is to avoid name space collisions
+in the MIB definition. Keep only the required MIBS in the mibs directory for the devices.
+Then merge all the resulting snmp.yml files into one main file that will be used by the snmp_exporter collector.
 
 ## Running
 
@@ -26,7 +32,8 @@ export MIBDIRS=mibs
 ./generator generate
 ```
 
-The generator reads in from `generator.yml` and writes to `snmp.yml`.
+The generator reads in the simplified collection instructions from `generator.yml` and writes to `snmp.yml`. Only the snmp.yml file is used
+by the snmp_exporter executable to collect data from the snmp enabled devices.
 
 Additional command are available for debugging, use the `help` command to see them.
 
@@ -47,7 +54,7 @@ docker run -ti \
 
 ## File Format
 
-`generator.yml` provides a list of modules. The simplest module is just a name
+`generator.yml` provides a list of modules. Each module defines what to collect from a device type. The simplest module is just a name
 and a set of OIDs to walk.
 
 ```yaml
@@ -129,23 +136,25 @@ modules:
                              #   EnumAsStateSet: An enum with a time series per state. Good for variable low-cardinality enums.
                              #   Bits: An RFC 2578 BITS construct, which produces a StateSet with a time series per bit.
 
-    filters: # Define filters no reduce the scope of walked oid / metric gathered
-      static: # static filters are handled in the generator
-        instance: # instance filter let specify specific instance to get for the list of target specified
-                  # If one of the target is in a lookup, the filter will apply to oiding depending on it
+    filters: # Define filters to collect only a subset of OID table instances
+      static: # static filters are handled in the generator. They will convert walks to multiple gets with the specified instances
+              # in the resulting snmp.yml output.
+        instance: # the instance filter will reduce a walk of a table to only the defined instances to get
+                  # If one of the target OIDs is used in a lookup, the filter will apply ALL tables using this lookup
+                  # For a network switch, this could be used to collect a subset of interfaces such as uplinks
+                  # For a router, this could be used to collect all real ports but not vlans and other virtual interfaces
+                  # Specifying ifAlias or ifName if they are used in lookups with ifIndex will apply to the filter to 
+                  # all the OIDs that depend on the lookup, such as ifSpeed, ifInHcOctets, etc.
+                  # This feature applies to any table(s) OIDs using a common instance
           - targets:
             - bsnDot11EssSsid
-            instances: ["2","3","4"]  # List of instance to get
+            instances: ["2","3","4"]  # List of interface instances to get
 
-        metric: # metric filter let specify specific oid in the subtree to get metric on
-                # it will not limit the number of request made to the hardware (as the exporter will Walk over the parent oid)
-                # The metrics specified in the list will be written in the snmp.yml. (Other will be discarded) 
-          - oid: 1.3.6.1.2.1.2.2.1
-            metrics : ["3", "5", "7", "14"]
-
-      dynamic: # dynamic filters are handed by the exporter. The generator simply copy them
+      dynamic: # dynamic filters are handed by the snmp exporter. The generator will simply pass on the configuration in the snmp.yml.
                # (Not implemented yet) the exporter will do a snmp get of the oid and will restrict snmp get made on the targets
-               # if the value returned is in the values list
+               # if the value returned is in the values list.
+               # This would be typically used to specify a filter for interfaces with a certain name in ifAlias, ifSpeed or admin status.
+               # For example, only get interfaces that a gig and faster, or get interfaces that are named Up or interfaces that are admin Up
         - oid: 1.3.6.1.2.1.2.2.1.7
           targets:
             - "1.3.6.1.2.1.2.2.1.4"
