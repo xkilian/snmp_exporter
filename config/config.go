@@ -183,25 +183,14 @@ func (c WalkParams) ConfigureSNMP(g *gosnmp.GoSNMP) {
 }
 
 type Filters struct {
-	Static StaticFilter `yaml:"static,omitempty"`
+	Static []StaticFilter `yaml:"static,omitempty"`
 	Dynamic []DynamicFilter `yaml:"dynamic,omitempty"`
 }
 
 type StaticFilter struct {
-	Metric []MetricStaticFilter `yaml:"metric,omitempty"`
-	Instance []InstanceStaticFilter `yaml:"instance,omitempty"`
-}
-
-type InstanceStaticFilter struct {
 	Targets []string `yaml:"targets,omitempty"`
 	Instances []string `yaml:"instances,omitempty"`
 }
-
-type MetricStaticFilter struct {
-	Oid string `yaml:"oid"`
-	Metrics []string `yaml:"metrics,omitempty"`
-}
-
 type DynamicFilter struct {
 	Oid string `yaml:"oid"`
 	Targets []string `yaml:"targets,omitempty"`

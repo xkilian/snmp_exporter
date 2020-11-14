@@ -139,16 +139,16 @@ modules:
     filters: # Define filters to collect only a subset of OID table instances
       static: # static filters are handled in the generator. They will convert walks to multiple gets with the specified instances
               # in the resulting snmp.yml output.
-        instance: # the instance filter will reduce a walk of a table to only the defined instances to get
-                  # If one of the target OIDs is used in a lookup, the filter will apply ALL tables using this lookup
-                  # For a network switch, this could be used to collect a subset of interfaces such as uplinks
-                  # For a router, this could be used to collect all real ports but not vlans and other virtual interfaces
-                  # Specifying ifAlias or ifName if they are used in lookups with ifIndex will apply to the filter to 
-                  # all the OIDs that depend on the lookup, such as ifSpeed, ifInHcOctets, etc.
-                  # This feature applies to any table(s) OIDs using a common instance
-          - targets:
-            - bsnDot11EssSsid
-            instances: ["2","3","4"]  # List of interface instances to get
+              # the instance filter will reduce a walk of a table to only the defined instances to get
+              # If one of the target OIDs is used in a lookup, the filter will apply ALL tables using this lookup
+              # For a network switch, this could be used to collect a subset of interfaces such as uplinks
+              # For a router, this could be used to collect all real ports but not vlans and other virtual interfaces
+              # Specifying ifAlias or ifName if they are used in lookups with ifIndex will apply to the filter to 
+              # all the OIDs that depend on the lookup, such as ifSpeed, ifInHcOctets, etc.
+              # This feature applies to any table(s) OIDs using a common instance
+        - targets:
+          - bsnDot11EssSsid
+          instances: ["2","3","4"]  # List of interface instances to get
 
       dynamic: # dynamic filters are handed by the snmp exporter. The generator will simply pass on the configuration in the snmp.yml.
                # (Not implemented yet) the exporter will do a snmp get of the oid and will restrict snmp get made on the targets
