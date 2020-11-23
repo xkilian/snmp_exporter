@@ -112,8 +112,88 @@ func ScrapeTarget(ctx context.Context, target string, config *config.Module, log
 	}
 	defer snmp.Conn.Close()
 
+	// evaluate rules
+	newGet := config.Get
+	newWalk := config.Walk
+	for _, filter := range config.Filters{
+		var pdus []gosnmp.SnmpPDU
+		allowedList := []string{}
+
+		if snmp.Version == gosnmp.Version1 {
+			pdus, err = snmp.WalkAll(filter.Oid)
+		} else {
+			pdus, err = snmp.BulkWalkAll(filter.Oid)
+		}
+		if err != nil {
+			continue
+		}
+
+		level.Debug(logger).Log("msg", "Evaluating rule for oid", "oid", filter.Oid)
+		for _, pdu := range pdus {
+			found := false
+			for _, val := range filter.Values {
+				if val == strconv.FormatFloat(getPduValue(&pdu), 'g', 1, 64) {
+					found = true
+					break
+				}
+			}
+			if found{
+				level.Debug(logger).Log("msg", "Caching instance", "instance", pdu.Name[len(pdu.Name)-1:])
+				allowedList = append(allowedList, pdu.Name[len(pdu.Name)-1:])
+			}
+		}
+
+		// Update config to get only instance and not walk them
+		newCfg := []string{}
+		for _, elem := range config.Walk {
+			found := false
+			for _, targetOid := range filter.Targets {
+				if elem == targetOid {
+					level.Debug(logger).Log("msg", "Deleting for walk configuration", "oid", targetOid)
+					found = true
+					break
+				}
+			}
+			// Oid not found in target,  we walk it
+			if !found {
+				newCfg = append(newCfg, elem)
+			}
+		}
+		newWalk = newCfg
+
+		// Only Keep instance not involved in filters
+		newCfg = []string{}
+		for _, elem := range config.Get {
+			found := false
+			for _, targetOid := range filter.Targets {
+				if !strings.HasPrefix(elem, targetOid){
+					continue
+				}else{
+					found = true
+					break
+				}
+			}
+			// Oid not found in targets, we keep it
+			if !found {
+				level.Debug(logger).Log("msg", "Keeping get configuration", "oid", elem)
+				newCfg = append(newCfg, elem)
+			}
+		}
+
+		// We now add each instance from filter to the get list
+		for _, targetOid := range filter.Targets {
+			for _, instance := range allowedList {
+				level.Debug(logger).Log("msg", "Adding get configuration", "oid", targetOid + "." + instance)
+				newCfg = append(newCfg, targetOid + "." + instance  )
+			}
+		}
+		newGet = newCfg
+		//instanceMap[filter.Oid] = allowedList
+	}
+
+
 	result := []gosnmp.SnmpPDU{}
-	getOids := config.Get
+	getOids := newGet
 	maxOids := int(config.WalkParams.MaxRepetitions)
 	// Max Repetition can be 0, maxOids cannot. SNMPv1 can only report one OID error per call.
 	if maxOids == 0 || snmp.Version == gosnmp.Version1 {
@@ -156,7 +236,7 @@ func ScrapeTarget(ctx context.Context, target string, config *config.Module, log
 		getOids = getOids[oids:]
 	}
 
-	for _, subtree := range config.Walk {
+	for _, subtree := range newWalk {
 		var pdus []gosnmp.SnmpPDU
 		level.Debug(logger).Log("msg", "Walking subtree", "oid", subtree)
 		walkStart := time.Now()
@@ -206,6 +286,7 @@ type collector struct {
 	target string
 	module *config.Module
 	logger log.Logger
+	lastScrap time.Time
 }
 
 func New(ctx context.Context, target string, module *config.Module, logger log.Logger) *collector {
@@ -220,7 +301,9 @@ func (c collector) Describe(ch chan<- *prometheus.Desc) {
 // Collect implements Prometheus.Collector.
 func (c collector) Collect(ch chan<- prometheus.Metric) {
 	start := time.Now()
+	level.Debug(c.logger).Log("msg", "LAST SCRAP", "last", c.lastScrap)
 	pdus, err := ScrapeTarget(c.ctx, c.target, c.module, c.logger)
+	c.lastScrap = start
 	if err != nil {
 		level.Info(c.logger).Log("msg", "Error scraping target", "err", err)
 		ch <- prometheus.NewInvalidMetric(prometheus.NewDesc("snmp_error", "Error scraping target", nil, nil), err)
