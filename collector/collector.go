@@ -132,7 +132,9 @@ func ScrapeTarget(ctx context.Context, target string, config *config.Module, log
 		for _, pdu := range pdus {
 			found := false
 			for _, val := range filter.Values {
-				if val == strconv.FormatFloat(getPduValue(&pdu), 'g', 1, 64) {
+				snmpval := pduValueAsString(&pdu, "DisplayString")
+				level.Debug(logger).Log("config value", val, "snmp value", snmpval)
+				if val == snmpval {
 					found = true
 					break
 				}
@@ -286,7 +288,6 @@ type collector struct {
 	target string
 	module *config.Module
 	logger log.Logger
-	lastScrap time.Time
 }
 
 func New(ctx context.Context, target string, module *config.Module, logger log.Logger) *collector {
@@ -301,9 +302,7 @@ func (c collector) Describe(ch chan<- *prometheus.Desc) {
 // Collect implements Prometheus.Collector.
 func (c collector) Collect(ch chan<- prometheus.Metric) {
 	start := time.Now()
-	level.Debug(c.logger).Log("msg", "LAST SCRAP", "last", c.lastScrap)
 	pdus, err := ScrapeTarget(c.ctx, c.target, c.module, c.logger)
-	c.lastScrap = start
 	if err != nil {
 		level.Info(c.logger).Log("msg", "Error scraping target", "err", err)
 		ch <- prometheus.NewInvalidMetric(prometheus.NewDesc("snmp_error", "Error scraping target", nil, nil), err)
