@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -134,7 +135,9 @@ func ScrapeTarget(ctx context.Context, target string, config *config.Module, log
 			for _, val := range filter.Values {
 				snmpval := pduValueAsString(&pdu, "DisplayString")
 				level.Debug(logger).Log("config value", val, "snmp value", snmpval)
-				if val == snmpval {
+
+				//if val == snmpval {
+				if regexp.MustCompile(val).MatchString(snmpval){
 					found = true
 					break
 				}
