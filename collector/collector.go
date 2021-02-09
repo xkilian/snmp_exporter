@@ -143,8 +143,10 @@ func ScrapeTarget(ctx context.Context, target string, config *config.Module, log
 				}
 			}
 			if found{
-				level.Debug(logger).Log("msg", "Caching instance", "instance", pdu.Name[len(pdu.Name)-1:])
-				allowedList = append(allowedList, pdu.Name[len(pdu.Name)-1:])
+				pduArray := strings.Split(pdu.Name, ".")
+				instance := pduArray[len(pduArray) - 1]
+				level.Debug(logger).Log("msg", "Caching instance", "instance", instance)
+				allowedList = append(allowedList, instance)
 			}
 		}
 
