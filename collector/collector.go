@@ -81,6 +81,79 @@ func listToOid(l []int) string {
 	return strings.Join(result, ".")
 }
 
+func filterAllowedInstances(logger log.Logger, filter config.DynamicFilter, pdus []gosnmp.SnmpPDU, allowedList []string) []string {
+	level.Debug(logger).Log("msg", "Evaluating rule for oid", "oid", filter.Oid)
+	for _, pdu := range pdus {
+		found := false
+		for _, val := range filter.Values {
+			snmpval := pduValueAsString(&pdu, "DisplayString")
+			level.Debug(logger).Log("config value", val, "snmp value", snmpval)
+
+			if regexp.MustCompile(val).MatchString(snmpval) {
+				found = true
+				break
+			}
+		}
+		if found {
+			pduArray := strings.Split(pdu.Name, ".")
+			instance := pduArray[len(pduArray)-1]
+			level.Debug(logger).Log("msg", "Caching instance", "instance", instance)
+			allowedList = append(allowedList, instance)
+		}
+	}
+	return allowedList
+}
+
+func updateWalkConfig(walkConfig []string, filter config.DynamicFilter, logger log.Logger) []string {
+	newCfg := []string{}
+	for _, elem := range walkConfig {
+		found := false
+		for _, targetOid := range filter.Targets {
+			if elem == targetOid {
+				level.Debug(logger).Log("msg", "Deleting for walk configuration", "oid", targetOid)
+				found = true
+				break
+			}
+		}
+		// Oid not found in target,  we walk it
+		if !found {
+			newCfg = append(newCfg, elem)
+		}
+	}
+	return newCfg
+}
+
+func updateGetConfig(getConfig []string, filter config.DynamicFilter, logger log.Logger) []string {
+	newCfg := []string{}
+	for _, elem := range getConfig {
+		found := false
+		for _, targetOid := range filter.Targets {
+			if !strings.HasPrefix(elem, targetOid) {
+				continue
+			} else {
+				found = true
+				break
+			}
+		}
+		// Oid not found in targets, we keep it
+		if !found {
+			level.Debug(logger).Log("msg", "Keeping get configuration", "oid", elem)
+			newCfg = append(newCfg, elem)
+		}
+	}
+	return newCfg
+}
+
+func addAllowedInstances(filter config.DynamicFilter, allowedList []string, logger log.Logger, newCfg []string) []string {
+	for _, targetOid := range filter.Targets {
+		for _, instance := range allowedList {
+			level.Debug(logger).Log("msg", "Adding get configuration", "oid", targetOid+"."+instance)
+			newCfg = append(newCfg, targetOid+"."+instance)
+		}
+	}
+	return newCfg
+}
+
 func ScrapeTarget(ctx context.Context, target string, config *config.Module, logger log.Logger) ([]gosnmp.SnmpPDU, error) {
 	// Set the options.
 	snmp := gosnmp.GoSNMP{}
@@ -129,75 +202,19 @@ func ScrapeTarget(ctx context.Context, target string, config *config.Module, log
 			continue
 		}
 
-		level.Debug(logger).Log("msg", "Evaluating rule for oid", "oid", filter.Oid)
-		for _, pdu := range pdus {
-			found := false
-			for _, val := range filter.Values {
-				snmpval := pduValueAsString(&pdu, "DisplayString")
-				level.Debug(logger).Log("config value", val, "snmp value", snmpval)
-
-				//if val == snmpval {
-				if regexp.MustCompile(val).MatchString(snmpval){
-					found = true
-					break
-				}
-			}
-			if found{
-				pduArray := strings.Split(pdu.Name, ".")
-				instance := pduArray[len(pduArray) - 1]
-				level.Debug(logger).Log("msg", "Caching instance", "instance", instance)
-				allowedList = append(allowedList, instance)
-			}
-		}
+		allowedList = filterAllowedInstances(logger, filter, pdus, allowedList)
 
 		// Update config to get only instance and not walk them
-		newCfg := []string{}
-		for _, elem := range config.Walk {
-			found := false
-			for _, targetOid := range filter.Targets {
-				if elem == targetOid {
-					level.Debug(logger).Log("msg", "Deleting for walk configuration", "oid", targetOid)
-					found = true
-					break
-				}
-			}
-			// Oid not found in target,  we walk it
-			if !found {
-				newCfg = append(newCfg, elem)
-			}
-		}
-		newWalk = newCfg
+		newWalk = updateWalkConfig(newWalk, filter, logger)
 
 		// Only Keep instance not involved in filters
-		newCfg = []string{}
-		for _, elem := range config.Get {
-			found := false
-			for _, targetOid := range filter.Targets {
-				if !strings.HasPrefix(elem, targetOid){
-					continue
-				}else{
-					found = true
-					break
-				}
-			}
-			// Oid not found in targets, we keep it
-			if !found {
-				level.Debug(logger).Log("msg", "Keeping get configuration", "oid", elem)
-				newCfg = append(newCfg, elem)
-			}
-		}
+		newCfg := updateGetConfig(newGet, filter, logger)
 
 		// We now add each instance from filter to the get list
-		for _, targetOid := range filter.Targets {
-			for _, instance := range allowedList {
-				level.Debug(logger).Log("msg", "Adding get configuration", "oid", targetOid + "." + instance)
-				newCfg = append(newCfg, targetOid + "." + instance  )
-			}
-		}
-		newGet = newCfg
-		//instanceMap[filter.Oid] = allowedList
-	}
+		newCfg = addAllowedInstances(filter, allowedList, logger, newCfg)
 
+		newGet = newCfg
+	}
 
 	result := []gosnmp.SnmpPDU{}
 	getOids := newGet
