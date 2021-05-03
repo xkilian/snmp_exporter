@@ -147,7 +147,7 @@ modules:
               # all the OIDs that depend on the lookup, such as ifSpeed, ifInHcOctets, etc.
               # This feature applies to any table(s) OIDs using a common instance
         - targets:
-          - bsnDot11EssSsid
+            - bsnDot11EssSsid
           instances: ["2","3","4"]  # List of interface instances to get
 
       dynamic: # dynamic filters are handed by the snmp exporter. The generator will simply pass on the configuration in the snmp.yml.
@@ -158,7 +158,7 @@ modules:
         - oid: 1.3.6.1.2.1.2.2.1.7
           targets:
             - "1.3.6.1.2.1.2.2.1.4"
-          values: ["1", "2"]
+          values: ["1", "2", "^Po.*", "^Te[0-9]+.*[0-9]+$"]
 ```
 
 ### EnumAsInfo and EnumAsStateSet
